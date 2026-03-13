@@ -1,0 +1,205 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum MerchantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum TransactionType {
+  ONLINE
+  OFFLINE
+  SALE_COMPLETION
+  PRE_AUTH
+  CRYPTO
+}
+
+enum TransactionStatus {
+  INITIATED
+  AUTHORIZED
+  CAPTURED
+  SETTLED
+  DECLINED
+  REVERSED
+  FAILED
+}
+
+enum CardScheme {
+  VISA
+  MASTERCARD
+  AMEX
+  UNIONPAY
+}
+
+enum BlockchainTxStatus {
+  PENDING
+  CONFIRMING
+  PAID
+  EXPIRED
+  CANCELLED
+  REFUNDED
+}
+
+enum OnChainTxStatus {
+  PENDING
+  SUBMITTED
+  CONFIRMED
+  FAILED
+}
+
+enum WalletKeyType {
+  MERCHANT
+  SYSTEM
+}
+
+enum WebhookSource {
+  STRIPE
+  NOWPAYMENTS
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model Merchant {
+  id                   String         @id @default(uuid())
+  businessName         String
+  email                String         @unique
+  phone                String?
+  status               MerchantStatus @default(ACTIVE)
+  stripeAccountId      String?
+  nowpaymentsApiToken  String?        // stored encrypted
+  transactionPinHash   String?        // hashed 6-digit PIN for transaction authorization
+  pinFailedAttempts    Int            @default(0)  // Failed PIN attempts counter
+  pinLockedUntil       DateTime?      // Lockout expiry time (null = not locked)
+  apiKey               String?        // API key for POS authentication
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  transactions         Transaction[]
+  walletKeys           WalletKey[]
+
+  @@map("merchants")
+}
+
+model Transaction {
+  id               String            @id @default(uuid())
+  idempotencyKey   String            @unique
+  merchantId       String
+  merchant         Merchant          @relation(fields: [merchantId], references: [id])
+  type             TransactionType
+  status           TransactionStatus @default(INITIATED)
+
+  amount           Decimal           @db.Decimal(18, 2)
+  currency         String            @db.VarChar(3)
+
+  cardScheme       CardScheme?
+  maskedCardNumber String?           // e.g. "****1234"
+  expiryDate       String?           // MM/YY
+
+  // Mode-specific fields
+  authorizationCode String?          // 6-digit, for OFFLINE / PRE_AUTH
+  referenceNumber   String?          // 6-12 digit, for SALE_COMPLETION
+
+  // Gateway (Stripe) fields
+  gatewayReference String?           // Stripe payment intent ID
+  gatewayResponse  Json?             // raw gateway response
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  blockchainTx     BlockchainTransaction?
+  onChainTxs       OnChainTransaction[]
+
+  @@index([merchantId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model BlockchainTransaction {
+  id               String            @id @default(uuid())
+  transactionId    String            @unique
+  transaction      Transaction       @relation(fields: [transactionId], references: [id])
+
+  nowpaymentsPaymentId  String?
+  invoiceUrl       String?
+  status           BlockchainTxStatus @default(PENDING)
+
+  payAmount        Decimal?          @db.Decimal(18, 8)
+  payCurrency      String?
+  receiveAmount    Decimal?          @db.Decimal(18, 2)
+  receiveCurrency  String?
+  paymentUrl       String?
+
+  callbackPayload  Json?
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@map("blockchain_transactions")
+}
+
+model OnChainTransaction {
+  id               String          @id @default(uuid())
+  transactionId    String
+  transaction      Transaction     @relation(fields: [transactionId], references: [id])
+
+  chainId          Int             // e.g. 1=Ethereum, 137=Polygon
+  contractAddress  String?
+  txHash           String?
+  blockNumber      Int?
+  blockTimestamp   DateTime?
+
+  status           OnChainTxStatus @default(PENDING)
+
+  gasUsed          String?         // BigInt as string
+  gasFee           String?         // BigInt as string
+  settlementData   Json?           // encoded call data
+
+  retryCount       Int             @default(0)
+  lastError        String?
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([transactionId])
+  @@index([txHash])
+  @@map("on_chain_transactions")
+}
+
+model WalletKey {
+  id                  String        @id @default(uuid())
+  merchantId          String?
+  merchant            Merchant?     @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+
+  address             String        @unique
+  encryptedPrivateKey String        // AES-256 encrypted
+  hdPath              String?       // e.g. "m/44'/60'/0'/0/0"
+  keyType             WalletKeyType @default(MERCHANT)
+  isActive            Boolean       @default(true)
+
+  createdAt           DateTime      @default(now())
+
+  @@map("wallet_keys")
+}
+
+model WebhookEvent {
+  id          String        @id @default(uuid())
+  source      WebhookSource
+  eventType   String
+  payload     Json
+  processed   Boolean       @default(false)
+  processedAt DateTime?
+
+  createdAt   DateTime      @default(now())
+
+  @@index([source, processed])
+  @@map("webhook_events")
+}
