@@ -189,7 +189,8 @@ User:     Only enters PIN
 | 📊 Dashboard | ❌ No | Overview stats (no sensitive data) |
 | 💳 Payments → Card Present | ✅ Yes | Process in-person card payments |
 | 💳 Payments → Card Not Present | ✅ Yes | Process remote card payments |
-| 💳 Payments → Crypto | ✅ Yes | Process crypto payments |
+| 💳 Payments → Crypto (NOWPayments) | ✅ Yes | Process crypto payments (customer sends crypto) |
+| 💳→₿ Payments → Buy Crypto (Stripe) | ❌ No | Customer buys crypto with card (embedded Stripe widget) |
 | 💳 Payments → Offline Sync | ✅ Yes | Sync offline transactions |
 | 📜 History → Card | ✅ Yes | View card payment history |
 | 📜 History → Crypto | ✅ Yes | View crypto payment history |
@@ -883,7 +884,171 @@ User:     Only enters PIN
 
 ---
 
-## 📜 Section 5: Transaction History
+## �→₿ Section 4b: Stripe Crypto Onramp (Embedded Card-to-Crypto)
+
+This is the **direct card-to-crypto flow** where a customer pays with card and receives crypto in their wallet. Unlike Section 4 (NOWPayments crypto where customer sends crypto), here the customer uses a **credit/debit card** inside Stripe's embedded widget.
+
+### Screen 4b.1: Stripe Onramp Setup
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Buy Crypto (Card Payment)                  [Cancel]    │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Amount to Spend:                                       │
+│  Currency: [USD ▼]  Amount: [$ _______]                 │
+│                                                         │
+│  Cryptocurrency:                                        │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐                │
+│  │ ₿ Bitcoin│ │ Ξ Ethereum│ │ $ USDC   │                │
+│  │  (BTC)   │ │  (ETH)   │ │ (Polygon)│                │
+│  │ [Select] │ │ [Select] │ │ [Select] │                │
+│  └──────────┘ └──────────┘ └──────────┘                │
+│                                                         │
+│  Destination Wallet Address:                            │
+│  [bc1qxy2kgdyxj...]                                     │
+│                                                         │
+│  [  Continue to Payment  ]                              │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**STEP 1 Flow:**
+1. Merchant/customer enters:
+   - Amount in fiat (USD, EUR, etc.)
+   - Selects cryptocurrency (BTC, ETH, USDC, etc.)
+   - Enters destination wallet address
+2. System validates:
+   - Amount > minimum (e.g., $1)
+   - Wallet address is valid format for the selected network
+3. Click "Continue to Payment"
+4. Frontend calls backend:
+   ```javascript
+   POST /api/v1/crypto-payments/stripe-onramp
+   {
+     sourceAmount: 100,
+     sourceCurrency: "USD",
+     destinationCurrency: "btc",
+     destinationNetwork: "bitcoin",
+     walletAddress: "bc1qxy2kgdyxj...",
+     lockWalletAddress: true,
+     settlementSpeed: "instant"
+   }
+   ```
+5. Backend returns `clientSecret`
+6. Navigate to **Screen 4b.2: Embedded Stripe Widget**
+
+---
+
+### Screen 4b.2: Embedded Stripe Onramp Widget
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Complete Your Purchase                     [Cancel]    │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │  Stripe Crypto Onramp (Embedded Widget)         │   │
+│  │  ─────────────────────────────────────────────  │   │
+│  │                                                 │   │
+│  │  You'll receive:                                │   │
+│  │  0.00145 BTC  (~$100.00 USD)                    │   │
+│  │                                                 │   │
+│  │  Network: Bitcoin                               │   │
+│  │  To: bc1qxy2kgdy... (locked)                    │   │
+│  │                                                 │   │
+│  │  ┌───────────────────────────────────────────┐  │   │
+│  │  │ Card Number                               │  │   │
+│  │  │ 4242 4242 4242 4242                       │  │   │
+│  │  └───────────────────────────────────────────┘  │   │
+│  │  ┌──────────────┐  ┌──────────────────────┐    │   │
+│  │  │ MM / YY      │  │ CVC                  │    │   │
+│  │  │ 12 / 28      │  │ 123                  │    │   │
+│  │  └──────────────┘  └──────────────────────┘    │   │
+│  │                                                 │   │
+│  │  ┌───────────────────────────────────────────┐  │   │
+│  │  │  Pay $100.00 → Buy BTC                    │  │   │
+│  │  └───────────────────────────────────────────┘  │   │
+│  │                                                 │   │
+│  │  🔒 Secured by Stripe                           │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  ⚠️  Card details are handled by Stripe.                │
+│     We never see or store your card information.        │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**STEP 2 Flow:**
+1. Stripe's embedded widget renders **inside your POS screen**
+2. Customer enters card details directly in the widget
+3. Customer clicks "Pay $100.00"
+4. Stripe handles everything:
+   - Card validation
+   - 3D Secure (if bank requires it)
+   - Charging the card
+   - Converting fiat to crypto
+   - Delivering crypto to the wallet address
+5. **Customer NEVER leaves your POS screen** — everything happens inline
+6. After completion, widget fires `onComplete` event
+7. Navigate to **Screen 4b.3: Success**
+
+**PIN Requirement:** ❌ **NO** — Stripe handles authentication inside the widget. The merchant's transaction PIN is NOT required for this flow.
+
+---
+
+### Screen 4b.3: Purchase Complete
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Purchase Successful!                       [Done]      │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │                                                 │   │
+│  │         ✅ [Success Checkmark]                  │   │
+│  │                                                 │   │
+│  │         CRYPTO PURCHASED                        │   │
+│  │                                                 │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  Receipt Details:                                       │
+│  ─────────────────                                      │
+│  Session ID: cos_abc123xyz                             │
+│  Crypto Amount: 0.00145 BTC                            │
+│  Fiat Value: $100.00 USD                               │
+│  Wallet: bc1qxy2kgdy...                                │
+│  Network: Bitcoin                                      │
+│  Date: Apr 10, 2026 3:30 PM                            │
+│  Status: Complete                                      │
+│                                                         │
+│  [  📧 Email Receipt  ]  [  🖨️ Print  ]               │
+│  [  🔗 View on Blockchain  ]                           │
+│                                                         │
+│  [     Done - New Purchase     ]                        │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**STEP 3 Flow:**
+1. Show success screen with:
+   - Session ID
+   - Crypto amount AND fiat value
+   - Destination wallet address
+   - Network
+   - Date/time
+2. Options:
+   - Email receipt
+   - Print receipt
+   - View on blockchain explorer
+   - Start new purchase
+3. Purchase complete!
+
+**For full integration details, see:** `STRIPE_CRYPTO_ONRAMP_FRONTEND.md`
+
+---
+
+## �📜 Section 5: Transaction History
 
 ### Screen 5.1: Transaction List
 
@@ -1172,7 +1337,8 @@ User:     Only enters PIN
 | **Dashboard** | Main Dashboard | ❌ No | After PIN verified |
 | **Payments** | Card Present | ✅ Yes | Before processing |
 | **Payments** | Card Not Present | ✅ Yes | Before processing |
-| **Payments** | Crypto | ✅ Yes | Before generating address |
+| **Payments** | Crypto (NOWPayments) | ✅ Yes | Before generating address |
+| **Payments** | Buy Crypto (Stripe Onramp) | ❌ No | Stripe handles auth in widget |
 | **History** | Transaction List | ✅ Yes | On first access |
 | **Balances** | Balance View | ✅ Yes | On first access |
 | **Blockchain** | Settlement Records | ✅ Yes | On first access |

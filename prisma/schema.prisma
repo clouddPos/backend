@@ -60,6 +60,13 @@ enum WalletKeyType {
   SYSTEM
 }
 
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 enum WebhookSource {
   STRIPE
   NOWPAYMENTS
@@ -110,6 +117,14 @@ model Transaction {
   // Gateway (Stripe) fields
   gatewayReference String?           // Stripe payment intent ID
   gatewayResponse  Json?             // raw gateway response
+
+  // Payout / Crypto Settlement fields
+  payoutAddress    String?           // Crypto address to receive funds
+  payoutCurrency   String?           // Crypto currency (e.g., 'btc', 'usdttrc20')
+  payoutAmount     Decimal?          @db.Decimal(18, 8) // Amount after fee deduction
+  payoutStatus     PayoutStatus?
+  payoutId         String?           // NOWPayments payout ID
+  payoutTxHash     String?           // Blockchain transaction hash
 
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt

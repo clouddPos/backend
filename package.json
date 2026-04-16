@@ -58,6 +58,7 @@
     "helmet-csp": "^4.0.0",
     "nest-winston": "^1.10.2",
     "nodemailer": "^8.0.1",
+    "otplib": "^13.4.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
