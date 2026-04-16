@@ -9,7 +9,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "module": "commonjs",
+    // "module": "commonjs",
     "target": "es2021",
     "declaration": false,
     "sourceMap": false,
