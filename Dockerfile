@@ -4,7 +4,6 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 RUN npm run prisma:generate
-# RUN npm prisma migrate deploy
 RUN npm run build
 RUN npm prune --production
 
